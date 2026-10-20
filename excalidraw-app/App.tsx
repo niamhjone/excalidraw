@@ -11,6 +11,7 @@ import {
 import {
   getImageFileCount,
   getNonDeletedElementCount,
+  getUrlHostname,
   trackEvent,
   trackPendoEvent,
 } from "@excalidraw/excalidraw/analytics";
@@ -1129,6 +1130,22 @@ const ExcalidrawWrapper = () => {
           );
         }}
         onLinkOpen={(element, event) => {
+          // FORK: Pendo — for external links only the hostname, never the URL
+          const isLinkToElement = !!element.link && isElementLink(element.link);
+          trackPendoEvent("element_link_opened", {
+            linkType: isLinkToElement ? "element" : "external",
+            elementType: element.type,
+            linkHost: isLinkToElement
+              ? undefined
+              : getUrlHostname(element.link),
+            // a "click" in the hyperlink popup, a "pointerup" on the canvas icon
+            trigger:
+              event.detail.nativeEvent.type === "click"
+                ? "hyperlink_popup"
+                : "canvas_icon",
+            isCollaborating: !!collabAPI?.isCollaborating(),
+            formFactor: editorInterface.formFactor,
+          });
           if (element.link && isElementLink(element.link)) {
             event.preventDefault();
             excalidrawAPI?.setViewport({
