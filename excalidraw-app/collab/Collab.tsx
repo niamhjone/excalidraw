@@ -144,6 +144,13 @@ type CollaboratorFollowTrigger =
   | "followed_user_left"
   | "frame_closed";
 
+/**
+ * FORK: Pendo — collab image uploads already reported as failed, as
+ * `roomId/fileId` (in memory only, never sent). A failed image is uploaded
+ * again with every scene broadcast, so this reports each failure once.
+ */
+const reportedFailedImageUploads = new Set<string>();
+
 export interface CollabAPI {
   /** function so that we can access the latest value from stale callbacks */
   isCollaborating: () => boolean;
@@ -208,8 +215,25 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             files: addedFiles,
             encryptionKey: roomKey,
             maxBytes: FILE_UPLOAD_MAX_BYTES,
+          }).catch((error) => {
+            // FORK: Pendo — encoding's only explicit throw is its size gate
+            // (errors.fileTooBig), which aborts the whole batch
+            this.trackImageUploadFailed(roomId, "file_too_big", addedFiles, [
+              ...addedFiles.keys(),
+            ]);
+            throw error;
           }),
         });
+
+        // FORK: Pendo — failed uploads are only marked as errored, silently
+        if (erroredFiles.length) {
+          this.trackImageUploadFailed(
+            roomId,
+            "upload_failed",
+            addedFiles,
+            erroredFiles,
+          );
+        }
 
         return {
           savedFiles: savedFiles.reduce(
@@ -402,6 +426,36 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
       console.error(error);
     }
+  };
+
+  /**
+   * FORK: Pendo — reports an image upload batch that has newly failed
+   * images. The ids only dedupe retries, they are never sent.
+   */
+  private trackImageUploadFailed = (
+    roomId: string,
+    errorType: "file_too_big" | "upload_failed",
+    addedFiles: Map<FileId, BinaryFileData>,
+    erroredFileIds: readonly FileId[],
+  ) => {
+    let hasNewFailure = false;
+    for (const fileId of erroredFileIds) {
+      const key = `${roomId}/${fileId}`;
+      if (!reportedFailedImageUploads.has(key)) {
+        reportedFailedImageUploads.add(key);
+        hasNewFailure = true;
+      }
+    }
+    if (!hasNewFailure) {
+      return;
+    }
+    trackPendoEvent("collab_image_upload_failed", {
+      errorType,
+      attemptedFileCount: addedFiles.size,
+      erroredFileCount: erroredFileIds.length,
+      savedFileCount: addedFiles.size - erroredFileIds.length,
+      collaboratorCount: this.collaborators.size,
+    });
   };
 
   stopCollaboration = (

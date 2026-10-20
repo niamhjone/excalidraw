@@ -21,6 +21,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { actionFinalize } from "../actions";
+import { trackPendoEvent } from "../analytics"; // FORK:
 import { DrawShapeTrail } from "../drawShapeTrail";
 
 import type App from "./App";
@@ -255,6 +256,32 @@ export class AppDrawShape {
         if (app.state.isBindingEnabled && isBindingElement(element)) {
           this.bindRecognizedArrow(element);
         }
+
+        // FORK: Pendo — what the sketch was recognized as
+        trackPendoEvent("draw_to_shape_completed", {
+          outcome: "recognized",
+          recognizedType: detectedElement.type,
+          finalType: element.type,
+          upgradedToArrow: element.type !== detectedElement.type,
+          // bindRecognizedArrow() binds the arrow in place
+          boundEndpointCount: isBindingElement(element)
+            ? Number(!!element.startBinding) + Number(!!element.endBinding)
+            : 0,
+          pointCount: points.length,
+          inFrame: !!element.frameId,
+          isBindingEnabled: app.state.isBindingEnabled,
+          penMode: app.state.penMode,
+          formFactor: app.editorInterface.formFactor,
+        });
+      } else {
+        // FORK: Pendo — an unrecognized sketch is dropped without feedback
+        trackPendoEvent("draw_to_shape_completed", {
+          outcome: "unrecognized",
+          pointCount: points.length,
+          isBindingEnabled: app.state.isBindingEnabled,
+          penMode: app.state.penMode,
+          formFactor: app.editorInterface.formFactor,
+        });
       }
     }
 

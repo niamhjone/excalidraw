@@ -18,12 +18,14 @@ import {
   ShapeCache,
 } from "@excalidraw/element";
 
+import type { BucketFillFailureReason } from "@excalidraw/element"; // FORK:
 import type {
   NonDeletedExcalidrawElement,
   Theme,
 } from "@excalidraw/element/types";
 
 import { actionChangeBucketFillBackgroundColor } from "../actions";
+import { trackPendoEvent } from "../analytics"; // FORK:
 import { editorJotaiStore } from "../editor-jotai";
 import { t } from "../i18n";
 
@@ -128,6 +130,7 @@ export class AppBucketFill {
   /**
    * Apply the current bucket fill settings to an existing fill-compatible
    * element (no-op when nothing would change). One undoable step.
+   * FORK: returns whether the element changed (Pendo analytics).
    */
   private restyle = (element: NonDeletedExcalidrawElement) => {
     const backgroundColor = this.getBucketFillBackgroundColor(
@@ -138,7 +141,7 @@ export class AppBucketFill {
       element.fillStyle === this.app.state.currentItemFillStyle &&
       element.opacity === this.app.state.currentItemOpacity
     ) {
-      return;
+      return false;
     }
     this.app.scene.mutateElement(element, {
       backgroundColor,
@@ -150,6 +153,30 @@ export class AppBucketFill {
     // reflect the new style
     ShapeCache.delete(element);
     this.app.scheduleCapture();
+    return true;
+  };
+
+  /**
+   * FORK: Pendo — reports the outcome of a committed fill click, which a
+   * Feature can't capture (the click lands on the canvas).
+   */
+  private trackFill = (
+    outcome: "filled" | "restyled" | "unchanged" | "failed",
+    details?: {
+      failureReason?: BucketFillFailureReason;
+      boundaryElementCount?: number;
+      hasOwner?: boolean;
+      inFrame?: boolean;
+      inGroup?: boolean;
+    },
+  ) => {
+    trackPendoEvent("bucket_fill_completed", {
+      outcome,
+      ...details,
+      fillStyle: this.app.state.currentItemFillStyle,
+      opacity: this.app.state.currentItemOpacity,
+      formFactor: this.app.editorInterface.formFactor,
+    });
   };
 
   private fill = (scenePointer: ScenePoint) => {
@@ -176,9 +203,12 @@ export class AppBucketFill {
       // hand-drawn strokeless bg polygon on empty canvas) — restyling it is
       // the sensible outcome, and beats a toast
       if (hitElement && isBucketFillCompatible(hitElement)) {
-        this.restyle(hitElement);
+        const restyled = this.restyle(hitElement);
+        this.trackFill(restyled ? "restyled" : "unchanged"); // FORK:
         return;
       }
+      // FORK: Pendo — every failure, including the silent "no_owner"
+      this.trackFill("failed", { failureReason: result.reason });
       if (result.reason === "too_complex") {
         this.app.setToast({
           message: t("bucketfill.tooComplex"),
@@ -209,7 +239,8 @@ export class AppBucketFill {
         elementsMap,
       })
     ) {
-      this.restyle(hitElement);
+      const restyled = this.restyle(hitElement);
+      this.trackFill(restyled ? "restyled" : "unchanged"); // FORK:
       return;
     }
 
@@ -282,6 +313,14 @@ export class AppBucketFill {
     // user can keep filling regions back-to-back without re-selecting the tool
     // (even when the tool isn't locked).
     this.app.scheduleCapture();
+    // FORK: Pendo
+    this.trackFill("filled", {
+      // outlines bounding the fill other than the owner's own
+      boundaryElementCount: result.boundaryElementIds.length,
+      hasOwner: !!result.ownerId,
+      inFrame: !!frameId,
+      inGroup: groupIds.length > 0,
+    });
   };
 
   /**
