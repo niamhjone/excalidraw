@@ -6,6 +6,7 @@ import { useTopPicksDnD } from "../TopPicksDnD/topPicksDnD";
 
 import type {
   CreateTopPicksGhost,
+  TopPicksChange,
   TopPicksDnD,
 } from "../TopPicksDnD/topPicksDnD";
 
@@ -53,7 +54,10 @@ export const useColorTopPicksDnD = ({
 }: {
   enabled: boolean;
   picks: readonly string[];
-  onPicksChange: (picks: string[]) => void;
+  onPicksChange: (
+    picks: string[],
+    change: TopPicksChange<string>, // FORK:
+  ) => void;
 }): ColorPickerDnD =>
   useTopPicksDnD({
     enabled,

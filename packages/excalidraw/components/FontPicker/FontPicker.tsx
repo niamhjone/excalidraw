@@ -10,6 +10,7 @@ import {
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
 
+import { trackPendoEvent } from "../../analytics"; // FORK: Novus by Pendo
 import { Fonts } from "../../fonts";
 import { t } from "../../i18n";
 import { ButtonSeparator } from "../ButtonSeparator";
@@ -243,7 +244,25 @@ export const FontPicker = React.memo(
     const dnd = useFontTopPicksDnD({
       enabled: isTopPicksCustomizable,
       picks,
-      onPicksChange: onTopPicksChange,
+      // FORK: Novus by Pendo — wrapped to track `style_top_picks_customized`
+      // (a drag & drop gesture, no click to tag)
+      onPicksChange: (nextPicks, change) => {
+        onTopPicksChange(nextPicks);
+        trackPendoEvent("style_top_picks_customized", {
+          pickerType: "font",
+          wasCustomized: isCustomized,
+          pickCount: nextPicks.length,
+          ...change, // action, slotIndex, fromIndex | pinnedValue
+          // the font family's name rather than its numeric id
+          pinnedValue:
+            change.action === "pin"
+              ? getFontFamilyLabel(
+                  change.pinnedValue,
+                  Fonts.registered.get(change.pinnedValue)?.fontFaces ?? [],
+                )
+              : undefined,
+        });
+      },
     });
 
     return (

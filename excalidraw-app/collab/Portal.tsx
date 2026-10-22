@@ -1,17 +1,26 @@
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
-import { trackEvent } from "@excalidraw/excalidraw/analytics";
+import { trackEvent, trackPendoEvent } from "@excalidraw/excalidraw/analytics"; // FORK:
 import { encryptData } from "@excalidraw/excalidraw/data/encryption";
-import { newElementWith } from "@excalidraw/element";
+import { isInitializedImageElement, newElementWith } from "@excalidraw/element"; // FORK:
 import throttle from "lodash.throttle";
 
 import type { UserIdleState } from "@excalidraw/common";
-import type { OrderedExcalidrawElement } from "@excalidraw/element/types";
 import type {
+  FileId, // FORK:
+  OrderedExcalidrawElement,
+} from "@excalidraw/element/types";
+import type {
+  BinaryFileData, // FORK:
   OnUserFollowedPayload,
   SocketId,
 } from "@excalidraw/excalidraw/types";
 
-import { WS_EVENTS, FILE_UPLOAD_TIMEOUT, WS_SUBTYPES } from "../app_constants";
+import {
+  WS_EVENTS,
+  FILE_UPLOAD_MAX_BYTES, // FORK:
+  FILE_UPLOAD_TIMEOUT,
+  WS_SUBTYPES,
+} from "../app_constants";
 import { isSyncableElement } from "../data";
 
 import type {
@@ -21,6 +30,52 @@ import type {
 } from "../data";
 import type { TCollabClass } from "./Collab";
 import type { Socket } from "socket.io-client";
+
+// FORK: Novus by Pendo — `collab_image_upload_failed`. Failed files are
+// retried on later broadcasts, so each file is reported only once.
+const reportedFailedUploadFileIds = new Set<FileId>();
+
+const trackImageUploadFailed = (
+  collab: TCollabClass,
+  errorType: "upload_failed" | "file_too_big",
+  erroredFiles: ReadonlyMap<FileId, BinaryFileData>,
+  savedFileCount: number,
+) => {
+  const mimeTypes = new Set<string>();
+  let erroredFileCount = 0;
+  for (const [fileId, fileData] of erroredFiles) {
+    if (!reportedFailedUploadFileIds.has(fileId)) {
+      reportedFailedUploadFileIds.add(fileId);
+      mimeTypes.add(fileData.mimeType);
+      erroredFileCount++;
+    }
+  }
+  if (!erroredFileCount) {
+    return;
+  }
+  trackPendoEvent("collab_image_upload_failed", {
+    errorType,
+    erroredFileCount,
+    savedFileCount,
+    mimeTypes: Array.from(mimeTypes).sort().join(","),
+    collaboratorCount: collab.excalidrawAPI.getAppState().collaborators.size,
+  });
+};
+
+// FORK: Novus by Pendo — the image files the next `FileManager.saveFiles`
+// call uploads (same selection), since an upload that throws reports none
+const getPendingUploadFiles = (collab: TCollabClass) => {
+  const files = collab.excalidrawAPI.getFiles();
+  const pendingFiles = new Map<FileId, BinaryFileData>();
+  for (const element of collab.excalidrawAPI.getSceneElementsIncludingDeleted()) {
+    const fileData =
+      isInitializedImageElement(element) && files[element.fileId];
+    if (fileData && !collab.fileManager.isFileSavedOrBeingSaved(fileData)) {
+      pendingFiles.set(element.fileId, fileData);
+    }
+  }
+  return pendingFiles;
+};
 
 class Portal {
   collab: TCollabClass;
@@ -102,13 +157,34 @@ class Portal {
   }
 
   queueFileUpload = throttle(async () => {
+    const pendingFiles = getPendingUploadFiles(this.collab); // FORK:
     try {
-      await this.collab.fileManager.saveFiles({
+      // FORK: Novus by Pendo — keep the result: per-file upload failures come
+      // back in `erroredFiles` without an error
+      const result = await this.collab.fileManager.saveFiles({
         elements: this.collab.excalidrawAPI.getSceneElementsIncludingDeleted(),
         files: this.collab.excalidrawAPI.getFiles(),
       });
+      trackImageUploadFailed(
+        this.collab,
+        "upload_failed",
+        result.erroredFiles,
+        result.savedFiles.size,
+      );
     } catch (error: any) {
       if (error.name !== "AbortError") {
+        // FORK: Novus by Pendo — the whole batch failed. `encodeFilesForUpload`
+        // rejects it if any file is too big (data URLs are ASCII, so their
+        // length is their size in bytes)
+        const isFileTooBig = Array.from(pendingFiles.values()).some(
+          (fileData) => fileData.dataURL.length > FILE_UPLOAD_MAX_BYTES,
+        );
+        trackImageUploadFailed(
+          this.collab,
+          isFileTooBig ? "file_too_big" : "upload_failed",
+          pendingFiles,
+          0,
+        );
         this.collab.excalidrawAPI.updateScene({
           appState: {
             errorMessage: error.message,

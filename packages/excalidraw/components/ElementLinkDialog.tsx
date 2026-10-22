@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { normalizeLink, KEYS } from "@excalidraw/common";
 
@@ -11,6 +11,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { Scene } from "@excalidraw/element";
 
+import { trackPendoEvent } from "../analytics"; // FORK: Novus by Pendo
 import { t } from "../i18n";
 import { getSelectedElements } from "../scene";
 
@@ -40,6 +41,12 @@ const ElementLinkDialog = ({
 
   const [nextLink, setNextLink] = useState<string | null>(originalLink);
   const [linkEdited, setLinkEdited] = useState(false);
+  // FORK: Novus by Pendo — the latest link generated from a canvas pick, and
+  // what was picked (analytics only)
+  const pickedLinkRef = useRef<{
+    link: string;
+    targetType: "element" | "group";
+  } | null>(null);
 
   useEffect(() => {
     const selectedElements = getSelectedElements(elementsMap, appState);
@@ -55,6 +62,8 @@ const ElementLinkDialog = ({
         nextLink = normalizeLink(
           generateLinkForSelection(idAndType.id, idAndType.type),
         );
+        // FORK: Novus by Pendo
+        pickedLinkRef.current = { link: nextLink, targetType: idAndType.type };
       }
     }
 
@@ -68,8 +77,33 @@ const ElementLinkDialog = ({
   ]);
 
   const handleConfirm = useCallback(() => {
+    // FORK: Novus by Pendo — `element_linked_to_element`. This dialog writes
+    // `element.link` directly, so the hyperlink popup's tracking never sees
+    // it. Call before the mutation, while `element.link` is the old link.
+    const trackLinkChange = (
+      element: ExcalidrawElement,
+      link: string | null,
+    ) => {
+      trackPendoEvent("element_linked_to_element", {
+        action: !link ? "remove" : element.link ? "change" : "add",
+        // only if the committed link is the one generated from the pick
+        targetType:
+          link && pickedLinkRef.current?.link === link
+            ? pickedLinkRef.current.targetType
+            : undefined,
+        sourceElementType: element.type,
+        linkEdited,
+        usesCustomLinkGenerator:
+          generateLinkForSelection !== defaultGetElementLinkFromSelection,
+      });
+    };
+
     if (nextLink && nextLink !== elementsMap.get(sourceElementId)?.link) {
       const elementToLink = elementsMap.get(sourceElementId);
+      // FORK: Novus by Pendo
+      if (elementToLink) {
+        trackLinkChange(elementToLink, nextLink);
+      }
       elementToLink &&
         scene.mutateElement(elementToLink, {
           link: nextLink,
@@ -78,6 +112,10 @@ const ElementLinkDialog = ({
 
     if (!nextLink && linkEdited && sourceElementId) {
       const elementToLink = elementsMap.get(sourceElementId);
+      // FORK: Novus by Pendo — only an actual removal (Enter runs this twice)
+      if (elementToLink?.link) {
+        trackLinkChange(elementToLink, null);
+      }
       elementToLink &&
         scene.mutateElement(elementToLink, {
           link: null,
@@ -85,7 +123,15 @@ const ElementLinkDialog = ({
     }
 
     onClose?.();
-  }, [sourceElementId, nextLink, elementsMap, linkEdited, scene, onClose]);
+  }, [
+    sourceElementId,
+    nextLink,
+    elementsMap,
+    linkEdited,
+    scene,
+    onClose,
+    generateLinkForSelection, // FORK: Novus by Pendo
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

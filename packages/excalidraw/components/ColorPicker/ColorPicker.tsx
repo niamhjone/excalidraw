@@ -17,6 +17,7 @@ import type { ColorTuple, ColorPaletteCustom } from "@excalidraw/common";
 
 import type { ExcalidrawElement, Theme } from "@excalidraw/element/types";
 
+import { trackPendoEvent } from "../../analytics"; // FORK: Novus by Pendo
 import { useAtom } from "../../editor-jotai";
 import { t } from "../../i18n";
 import { useApp, useExcalidrawContainer, useStylesPanelMode } from "../App";
@@ -399,7 +400,7 @@ const ColorPickerComponent = ({
   const dnd = useColorTopPicksDnD({
     enabled: isTopPicksCustomizable,
     picks: effectiveTopPicks,
-    onPicksChange: (picks) => {
+    onPicksChange: (picks, change) => {
       if (!customizableTopPicks) {
         return;
       }
@@ -410,6 +411,13 @@ const ColorPickerComponent = ({
           ...appState.colorTopPicks,
           [customizableTopPicks]: picks,
         },
+      });
+      // FORK: Novus by Pendo — a drag & drop gesture, no click to tag
+      trackPendoEvent("style_top_picks_customized", {
+        pickerType: customizableTopPicks,
+        wasCustomized: !!customTopPicks?.length,
+        pickCount: picks.length,
+        ...change, // action, slotIndex, fromIndex | pinnedValue (the color)
       });
     },
   });

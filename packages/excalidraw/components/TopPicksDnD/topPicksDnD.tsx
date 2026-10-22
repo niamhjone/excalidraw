@@ -93,6 +93,12 @@ export type TopPicksDnD<T> = {
   setStripEl: (el: HTMLDivElement | null) => void;
 };
 
+// FORK: Novus by Pendo — what a committed drop changed, passed to
+// `onPicksChange` for the `style_top_picks_customized` track event
+export type TopPicksChange<T> =
+  | { action: "pin"; slotIndex: number; pinnedValue: T }
+  | { action: "reorder"; fromIndex: number; slotIndex: number };
+
 /**
  * live preview of the reorder result — the translation (px) moving the pick
  * at `index` to the slot it would occupy if dropped right now
@@ -144,7 +150,7 @@ export const useTopPicksDnD = <T,>({
 }: {
   enabled: boolean;
   picks: readonly T[];
-  onPicksChange: (picks: T[]) => void;
+  onPicksChange: (picks: T[], change: TopPicksChange<T>) => void; // FORK:
   /** value-equality — pins identical to an existing pick are refused */
   isSamePick?: (a: T, b: T) => boolean;
   createGhost: CreateTopPicksGhost<T>;
@@ -522,13 +528,23 @@ export const useTopPicksDnD = <T,>({
           if (!picks.some((pick) => isSamePick(pick, value))) {
             const next = [...picks];
             next[overIndex] = value;
-            onPicksChange(next);
+            // FORK: Novus by Pendo — report the change
+            onPicksChange(next, {
+              action: "pin",
+              slotIndex: overIndex,
+              pinnedValue: value,
+            });
           }
         } else if (origin.index !== overIndex) {
           const next = [...picks];
           const [moved] = next.splice(origin.index, 1);
           next.splice(overIndex, 0, moved);
-          onPicksChange(next);
+          // FORK: Novus by Pendo — report the change
+          onPicksChange(next, {
+            action: "reorder",
+            fromIndex: origin.index,
+            slotIndex: overIndex,
+          });
         }
         releaseGhost({ rect: slotRects[overIndex] });
       } else {
