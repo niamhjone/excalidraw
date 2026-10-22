@@ -6600,6 +6600,20 @@ class App extends React.Component<AppProps, AppState> {
             customEvent,
           );
         }
+        // FORK: Novus by Pendo — `element_link_opened`. The link icon is
+        // painted on the canvas (no DOM node to tag as a Feature), and element
+        // links only scroll the viewport (no page change).
+        const isLinkToElement = isElementLink(url);
+        trackPendoEvent("element_link_opened", {
+          linkType: isLinkToElement ? "element" : "external",
+          elementType: this.hitLinkElement.type,
+          handledByHost: !!customEvent?.defaultPrevented,
+          // hostname only — never the full URL
+          linkHost: isLinkToElement ? undefined : getUrlHostname(url),
+          viewModeEnabled: this.state.viewModeEnabled,
+          formFactor: this.editorInterface.formFactor,
+          isCollaborating: this.props.isCollaborating,
+        });
         if (!customEvent?.defaultPrevented) {
           const target = isLocalLink(url) ? "_self" : "_blank";
           const newWindow = this.ownerWindow.open(undefined, target);

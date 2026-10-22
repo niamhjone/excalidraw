@@ -6,6 +6,7 @@ import { useTopPicksDnD } from "../TopPicksDnD/topPicksDnD";
 
 import type {
   CreateTopPicksGhost,
+  TopPicksChange,
   TopPicksDnD,
 } from "../TopPicksDnD/topPicksDnD";
 
@@ -96,7 +97,10 @@ export const useFontTopPicksDnD = ({
 }: {
   enabled: boolean;
   picks: readonly FontFamilyValues[];
-  onPicksChange: (picks: FontFamilyValues[]) => void;
+  onPicksChange: (
+    picks: FontFamilyValues[],
+    change: TopPicksChange<FontFamilyValues>, // FORK:
+  ) => void;
 }): FontPickerDnD =>
   useTopPicksDnD({
     enabled,

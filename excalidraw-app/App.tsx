@@ -182,6 +182,9 @@ declare global {
 }
 
 let pwaEvent: BeforeInstallPromptEvent | null = null;
+// FORK: Novus by Pendo — whether the command palette's install prompt was
+// accepted, telling `pwa_installed` apart from installs via the browser's UI
+let pwaPromptAccepted = false;
 
 // Adding a listener outside of the component as it may (?) need to be
 // subscribed early to catch the event.
@@ -468,6 +471,29 @@ const ExcalidrawWrapper = () => {
     setTimeout(() => {
       trackEvent("load", "version", getVersion());
     }, VERSION_TIMEOUT);
+  }, []);
+
+  // FORK: Novus by Pendo — `pwa_installed`, for installs by any route,
+  // including the browser's own install UI (no page view, nothing to tag)
+  const appContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const ownerWindow = appContainerRef.current?.ownerDocument.defaultView;
+    if (!ownerWindow) {
+      return;
+    }
+    const onAppInstalled = () => {
+      trackPendoEvent("pwa_installed", {
+        installSource: pwaPromptAccepted ? "command_palette" : "browser_ui",
+        // the command palette's (consumed) prompt counts as available
+        deferredPromptAvailable: pwaPromptAccepted || !!pwaEvent,
+        isExcalidrawPlusSignedUser,
+      });
+      pwaPromptAccepted = false;
+    };
+    ownerWindow.addEventListener("appinstalled", onAppInstalled);
+    return () => {
+      ownerWindow.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
 
   const [, setShareDialogState] = useAtom(shareDialogStateAtom);
@@ -1052,6 +1078,7 @@ const ExcalidrawWrapper = () => {
 
   return (
     <div
+      ref={appContainerRef} // FORK: Novus by Pendo
       style={{ height: "100%" }}
       className={clsx("excalidraw-app", {
         "is-collaborating": isCollaborating,
@@ -1400,6 +1427,8 @@ const ExcalidrawWrapper = () => {
                       platform: choice.platform,
                       source: "command_palette",
                     });
+                    // FORK: Novus by Pendo
+                    pwaPromptAccepted = choice.outcome === "accepted";
                     // event cannot be reused, but we'll hopefully
                     // grab new one as the event should be fired again
                     pwaEvent = null;
