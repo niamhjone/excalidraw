@@ -244,6 +244,16 @@ export const FontPicker = React.memo(
       enabled: isTopPicksCustomizable,
       picks,
       onPicksChange: onTopPicksChange,
+      // FORK: Pendo track event
+      tracking: {
+        pickerType: "font",
+        wasCustomized: isCustomized,
+        getPickLabel: (fontFamily) =>
+          getFontFamilyLabel(
+            fontFamily,
+            Fonts.registered.get(fontFamily)?.fontFaces ?? [],
+          ),
+      },
     });
 
     return (

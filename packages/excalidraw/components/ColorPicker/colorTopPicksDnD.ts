@@ -7,6 +7,7 @@ import { useTopPicksDnD } from "../TopPicksDnD/topPicksDnD";
 import type {
   CreateTopPicksGhost,
   TopPicksDnD,
+  TopPicksTracking, // FORK:
 } from "../TopPicksDnD/topPicksDnD";
 
 /** value-equality of colors — normalizes notation (`#fff` vs `#ffffff` vs
@@ -50,10 +51,13 @@ export const useColorTopPicksDnD = ({
   enabled,
   picks,
   onPicksChange,
+  tracking, // FORK:
 }: {
   enabled: boolean;
   picks: readonly string[];
   onPicksChange: (picks: string[]) => void;
+  /** FORK: Pendo track event context */
+  tracking?: TopPicksTracking<string>;
 }): ColorPickerDnD =>
   useTopPicksDnD({
     enabled,
@@ -61,4 +65,5 @@ export const useColorTopPicksDnD = ({
     onPicksChange,
     isSamePick: isSameColor,
     createGhost: createColorGhost,
+    tracking, // FORK: Pendo track event
   });

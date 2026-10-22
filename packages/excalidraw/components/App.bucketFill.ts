@@ -23,7 +23,13 @@ import type {
   Theme,
 } from "@excalidraw/element/types";
 
+import type {
+  BucketFillFailureReason,
+  BucketFillGeometryResult,
+} from "@excalidraw/element"; // FORK:
+
 import { actionChangeBucketFillBackgroundColor } from "../actions";
+import { trackPendoEvent } from "../analytics"; // FORK:
 import { editorJotaiStore } from "../editor-jotai";
 import { t } from "../i18n";
 
@@ -152,6 +158,41 @@ export class AppBucketFill {
     this.app.scheduleCapture();
   };
 
+  // FORK: Pendo track event — the outcome of a bucket-fill click
+  private trackFill = (
+    outcome: "created" | "restyled" | "unchanged" | "failed",
+    details: {
+      failureReason?: BucketFillFailureReason;
+      region?: Extract<BucketFillGeometryResult, { ok: true }>;
+      isInFrame?: boolean;
+    },
+  ) => {
+    const { failureReason, region, isInFrame } = details;
+    trackPendoEvent("bucket_fill_applied", {
+      outcome,
+      failureReason,
+      boundaryElementCount: region?.boundaryElementIds.length,
+      hasOwner: region ? !!region.ownerId : undefined,
+      isInFrame,
+      fillStyle: this.app.state.currentItemFillStyle,
+      polygonPointCount: region?.scenePoints.length,
+    });
+  };
+
+  // FORK: `restyle` + Pendo track event. `restyle` is a no-op when nothing
+  // would change, and only an actual mutation bumps the element version
+  private restyleAndTrack = (
+    element: NonDeletedExcalidrawElement,
+    region?: Extract<BucketFillGeometryResult, { ok: true }>,
+  ) => {
+    const { version } = element;
+    this.restyle(element);
+    this.trackFill(element.version === version ? "unchanged" : "restyled", {
+      region,
+      isInFrame: !!element.frameId,
+    });
+  };
+
   private fill = (scenePointer: ScenePoint) => {
     // shared with the generic shape background, but a transparent fill would
     // be invisible, so fall back to a real color (appState is not mutated)
@@ -176,7 +217,7 @@ export class AppBucketFill {
       // hand-drawn strokeless bg polygon on empty canvas) — restyling it is
       // the sensible outcome, and beats a toast
       if (hitElement && isBucketFillCompatible(hitElement)) {
-        this.restyle(hitElement);
+        this.restyleAndTrack(hitElement); // FORK: Pendo track event
         return;
       }
       if (result.reason === "too_complex") {
@@ -195,6 +236,8 @@ export class AppBucketFill {
         });
       }
       // "no_owner" stays silent — clicking empty canvas shouldn't nag
+      // FORK: Pendo track event
+      this.trackFill("failed", { failureReason: result.reason });
       return;
     }
 
@@ -209,7 +252,7 @@ export class AppBucketFill {
         elementsMap,
       })
     ) {
-      this.restyle(hitElement);
+      this.restyleAndTrack(hitElement, result); // FORK: Pendo track event
       return;
     }
 
@@ -282,6 +325,9 @@ export class AppBucketFill {
     // user can keep filling regions back-to-back without re-selecting the tool
     // (even when the tool isn't locked).
     this.app.scheduleCapture();
+
+    // FORK: Pendo track event
+    this.trackFill("created", { region: result, isInFrame: !!frameId });
   };
 
   /**

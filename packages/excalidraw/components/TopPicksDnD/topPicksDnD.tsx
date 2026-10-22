@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { trackPendoEvent } from "../../analytics"; // FORK:
+
 import "./TopPicksDnD.scss";
+
+import type { AppState } from "../../types"; // FORK:
 
 /**
  * Custom (non-native) drag & drop for pinning values (colors, font families)
@@ -93,6 +97,38 @@ export type TopPicksDnD<T> = {
   setStripEl: (el: HTMLDivElement | null) => void;
 };
 
+/** FORK: context of the Pendo `top_picks_customized` track event */
+export type TopPicksTracking<T> = {
+  pickerType: keyof AppState["colorTopPicks"] | "font";
+  /** the strip already held user-customized picks before the drop */
+  wasCustomized: boolean;
+  /** language-independent name of a pick (defaults to `String(value)`) */
+  getPickLabel?: (value: T) => string;
+};
+
+// FORK: Pendo track event, once a drop commits new picks
+const trackTopPicksCustomized = <T,>(
+  tracking: TopPicksTracking<T> | undefined,
+  value: T,
+  origin: DragOrigin,
+  slotIndex: number,
+  pickCount: number,
+) => {
+  if (!tracking) {
+    return;
+  }
+  trackPendoEvent("top_picks_customized", {
+    pickerType: tracking.pickerType,
+    action: origin.kind === "source" ? "pin" : "reorder",
+    slotIndex,
+    fromIndex: origin.kind === "pick" ? origin.index : undefined,
+    // the pinned (or moved) pick: a color, or a font family name
+    pinnedValue: tracking.getPickLabel?.(value) ?? String(value),
+    pickCount,
+    wasCustomized: tracking.wasCustomized,
+  });
+};
+
 /**
  * live preview of the reorder result — the translation (px) moving the pick
  * at `index` to the slot it would occupy if dropped right now
@@ -141,6 +177,7 @@ export const useTopPicksDnD = <T,>({
   onPicksChange,
   isSamePick = (a, b) => a === b,
   createGhost,
+  tracking, // FORK:
 }: {
   enabled: boolean;
   picks: readonly T[];
@@ -148,6 +185,8 @@ export const useTopPicksDnD = <T,>({
   /** value-equality — pins identical to an existing pick are refused */
   isSamePick?: (a: T, b: T) => boolean;
   createGhost: CreateTopPicksGhost<T>;
+  /** FORK: Pendo track event context */
+  tracking?: TopPicksTracking<T>;
 }): TopPicksDnD<T> => {
   const [dragState, setDragState] = useState<TopPicksDragState<T>>(null);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -158,6 +197,7 @@ export const useTopPicksDnD = <T,>({
     onPicksChange,
     isSamePick,
     createGhost,
+    tracking, // FORK: Pendo track event
   });
   latestRef.current = {
     enabled,
@@ -165,6 +205,7 @@ export const useTopPicksDnD = <T,>({
     onPicksChange,
     isSamePick,
     createGhost,
+    tracking, // FORK: Pendo track event
   };
 
   const controller = useMemo(() => {
@@ -513,7 +554,8 @@ export const useTopPicksDnD = <T,>({
       suppressNextClick();
 
       const { overIndex, origin, value, slotRects } = session;
-      const { picks, onPicksChange, isSamePick } = latestRef.current;
+      // FORK: `tracking` for the Pendo track event
+      const { picks, onPicksChange, isSamePick, tracking } = latestRef.current;
 
       settleStripInstantly();
 
@@ -523,12 +565,28 @@ export const useTopPicksDnD = <T,>({
             const next = [...picks];
             next[overIndex] = value;
             onPicksChange(next);
+            // FORK: Pendo track event
+            trackTopPicksCustomized(
+              tracking,
+              value,
+              origin,
+              overIndex,
+              next.length,
+            );
           }
         } else if (origin.index !== overIndex) {
           const next = [...picks];
           const [moved] = next.splice(origin.index, 1);
           next.splice(overIndex, 0, moved);
           onPicksChange(next);
+          // FORK: Pendo track event
+          trackTopPicksCustomized(
+            tracking,
+            value,
+            origin,
+            overIndex,
+            next.length,
+          );
         }
         releaseGhost({ rect: slotRects[overIndex] });
       } else {

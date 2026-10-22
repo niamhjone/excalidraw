@@ -106,7 +106,13 @@ export type PendoTrackEventName =
   | "embeddable_inserted"
   | "element_hyperlink_changed"
   | "element_type_converted"
-  | "editor_action_performed";
+  | "editor_action_performed"
+  // FORK: canvas tools, top picks, element links & collab image uploads
+  | "bucket_fill_applied"
+  | "autoshape_recognition_completed"
+  | "top_picks_customized"
+  | "element_link_opened"
+  | "collab_image_upload_failed";
 
 export type PendoTrackEventProperties = Record<
   string,

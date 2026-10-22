@@ -21,6 +21,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { actionFinalize } from "../actions";
+import { trackPendoEvent } from "../analytics"; // FORK:
 import { DrawShapeTrail } from "../drawShapeTrail";
 
 import type App from "./App";
@@ -229,6 +230,8 @@ export class AppDrawShape {
 
     // note: size gate inside recognizeShape
     if (points.length >= 3) {
+      // FORK: Pendo track event (lines get no live preview)
+      const usedLivePreview = !!app.state.newElement;
       const detectedElement =
         app.state.newElement ||
         convertToShape(
@@ -255,6 +258,30 @@ export class AppDrawShape {
         if (app.state.isBindingEnabled && isBindingElement(element)) {
           this.bindRecognizedArrow(element);
         }
+
+        // FORK: Pendo track event. Binding mutates the inserted arrow in
+        // place, so its bindings are current here
+        trackPendoEvent("autoshape_recognition_completed", {
+          outcome: "recognized",
+          recognizedType: detectedElement.type,
+          upgradedToArrow:
+            detectedElement.type === "line" && element.type === "arrow",
+          boundEndpointCount: isBindingElement(element)
+            ? Number(!!element.startBinding) + Number(!!element.endBinding)
+            : 0,
+          sketchPointCount: points.length,
+          isInFrame: !!element.frameId,
+          usedLivePreview,
+          penMode: app.state.penMode,
+        });
+      } else {
+        // FORK: Pendo track event — the sketch is silently discarded
+        trackPendoEvent("autoshape_recognition_completed", {
+          outcome: "unrecognized",
+          sketchPointCount: points.length,
+          usedLivePreview,
+          penMode: app.state.penMode,
+        });
       }
     }
 

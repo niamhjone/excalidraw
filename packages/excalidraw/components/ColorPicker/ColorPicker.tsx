@@ -412,6 +412,13 @@ const ColorPickerComponent = ({
         },
       });
     },
+    // FORK: Pendo track event
+    tracking: customizableTopPicks
+      ? {
+          pickerType: customizableTopPicks,
+          wasCustomized: !!customTopPicks?.length,
+        }
+      : undefined,
   });
 
   return (

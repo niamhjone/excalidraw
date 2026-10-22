@@ -6590,6 +6590,8 @@ class App extends React.Component<AppProps, AppState> {
       if (url) {
         url = normalizeLink(url);
         let customEvent;
+        // FORK: Pendo track event, read before `onLinkOpen` runs
+        const linkElement = this.hitLinkElement;
         if (this.props.onLinkOpen) {
           customEvent = wrapEvent(EVENT.EXCALIDRAW_LINK, event.nativeEvent);
           this.props.onLinkOpen(
@@ -6600,6 +6602,22 @@ class App extends React.Component<AppProps, AppState> {
             customEvent,
           );
         }
+        // FORK: Pendo track event, before a same-tab navigation can unload
+        // the page. Only the hostname of external links — never the URL
+        const linkType = isElementLink(url)
+          ? "element"
+          : isLocalLink(url)
+          ? "same_origin"
+          : "external";
+        trackPendoEvent("element_link_opened", {
+          linkType,
+          elementType: linkElement.type,
+          linkHost: linkType === "external" ? getUrlHostname(url) : undefined,
+          openedInNewTab: !customEvent?.defaultPrevented && !isLocalLink(url),
+          handledByHost: !!customEvent?.defaultPrevented,
+          viewModeEnabled: this.state.viewModeEnabled,
+          isTouchScreen: this.editorInterface.isTouchScreen,
+        });
         if (!customEvent?.defaultPrevented) {
           const target = isLocalLink(url) ? "_self" : "_blank";
           const newWindow = this.ownerWindow.open(undefined, target);
