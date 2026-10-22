@@ -65,10 +65,16 @@ const embeddableLinkCache = new Map<
   string
 >();
 
-const trackHyperlinkChanged = (
+// FORK: exported, with optional `details`, for the "Link to element" dialog
+export const trackHyperlinkChanged = (
   element: NonDeletedExcalidrawElement,
   previousLink: string | null,
   nextLink: string | null,
+  details?: {
+    source: "element_link_dialog";
+    targetType?: "element" | "group" | "unresolved";
+    confirmMethod: "button" | "enter_key";
+  },
 ) => {
   if (previousLink === nextLink) {
     return;
@@ -82,6 +88,7 @@ const trackHyperlinkChanged = (
     isEmbeddable: isEmbeddableElement(element),
     // hostname only — never the full URL
     linkHost: link && !isLinkToElement ? getUrlHostname(link) : undefined,
+    ...details,
   });
 };
 

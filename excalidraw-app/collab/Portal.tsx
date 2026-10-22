@@ -1,7 +1,7 @@
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
-import { trackEvent } from "@excalidraw/excalidraw/analytics";
+import { trackEvent, trackPendoEvent } from "@excalidraw/excalidraw/analytics"; // FORK:
 import { encryptData } from "@excalidraw/excalidraw/data/encryption";
-import { newElementWith } from "@excalidraw/element";
+import { isInitializedImageElement, newElementWith } from "@excalidraw/element"; // FORK:
 import throttle from "lodash.throttle";
 
 import type { UserIdleState } from "@excalidraw/common";
@@ -12,6 +12,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { WS_EVENTS, FILE_UPLOAD_TIMEOUT, WS_SUBTYPES } from "../app_constants";
+import { FILE_UPLOAD_MAX_BYTES } from "../app_constants"; // FORK:
 import { isSyncableElement } from "../data";
 
 import type {
@@ -21,6 +22,10 @@ import type {
 } from "../data";
 import type { TCollabClass } from "./Collab";
 import type { Socket } from "socket.io-client";
+
+// FORK: Pendo track event — ids of image files already reported as failed to
+// upload. Module-level, so each file is reported once per browser session
+const reportedFailedFileIds = new Set<string>();
 
 class Portal {
   collab: TCollabClass;
@@ -103,10 +108,12 @@ class Portal {
 
   queueFileUpload = throttle(async () => {
     try {
-      await this.collab.fileManager.saveFiles({
+      // FORK: `result` for the Pendo track event
+      const result = await this.collab.fileManager.saveFiles({
         elements: this.collab.excalidrawAPI.getSceneElementsIncludingDeleted(),
         files: this.collab.excalidrawAPI.getFiles(),
       });
+      this.trackFileUploadFailed(result); // FORK: Pendo track event
     } catch (error: any) {
       if (error.name !== "AbortError") {
         this.collab.excalidrawAPI.updateScene({
@@ -114,6 +121,7 @@ class Portal {
             errorMessage: error.message,
           },
         });
+        this.trackFileUploadFailed(null); // FORK: Pendo track event
       }
     }
 
@@ -250,6 +258,69 @@ class Portal {
   broadcastUserFollowed = (payload: OnUserFollowedPayload) => {
     if (this.socket?.id) {
       this.socket.emit(WS_EVENTS.USER_FOLLOW_CHANGE, payload);
+    }
+  };
+
+  /**
+   * FORK: Pendo track event — images that couldn't be uploaded to the room's
+   * file storage, so collaborators never receive them. Failed files are
+   * retried on every (throttled) upload, so only files failing for the first
+   * time are reported (and counted in `erroredFileCount`).
+   *
+   * `result` is null when `saveFiles` threw: nothing in the batch was saved,
+   * and the batch (not returned) is the scene's image files that are neither
+   * saved nor being saved, collected the way `saveFiles` does.
+   */
+  private trackFileUploadFailed = (
+    result: Awaited<
+      ReturnType<TCollabClass["fileManager"]["saveFiles"]>
+    > | null,
+  ) => {
+    try {
+      const failedFiles = new Map(result?.erroredFiles);
+      if (!result) {
+        const files = this.collab.excalidrawAPI.getFiles();
+        const elements =
+          this.collab.excalidrawAPI.getSceneElementsIncludingDeleted();
+        for (const element of elements) {
+          const fileData =
+            isInitializedImageElement(element) && files[element.fileId];
+          if (
+            fileData &&
+            !this.collab.fileManager.isFileSavedOrBeingSaved(fileData)
+          ) {
+            failedFiles.set(fileData.id, fileData);
+          }
+        }
+      }
+      const newlyFailedFileIds = [...failedFiles.keys()].filter(
+        (id) => !reportedFailedFileIds.has(id),
+      );
+      if (!newlyFailedFileIds.length) {
+        return;
+      }
+      for (const id of newlyFailedFileIds) {
+        reportedFailedFileIds.add(id);
+      }
+      const savedFileCount = result?.savedFiles.size ?? 0;
+      trackPendoEvent("collab_image_upload_failed", {
+        // `encodeFilesForUpload` throws a localized `errors.fileTooBig` for a
+        // file above FILE_UPLOAD_MAX_BYTES (data URLs are ASCII: length = bytes)
+        errorType: result
+          ? "upload_failed"
+          : [...failedFiles.values()].some(
+              (file) => file.dataURL.length > FILE_UPLOAD_MAX_BYTES,
+            )
+          ? "file_too_big"
+          : "save_failed",
+        attemptedFileCount: failedFiles.size + savedFileCount,
+        erroredFileCount: newlyFailedFileIds.length,
+        savedFileCount,
+        collaboratorCount:
+          this.collab.excalidrawAPI.getAppState().collaborators.size,
+      });
+    } catch (error) {
+      console.error("error during pendo analytics", error);
     }
   };
 }

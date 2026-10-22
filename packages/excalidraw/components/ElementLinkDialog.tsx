@@ -7,7 +7,9 @@ import {
   getLinkIdAndTypeFromSelection,
 } from "@excalidraw/element";
 
-import type { ExcalidrawElement } from "@excalidraw/element/types";
+import { isElementLink, parseElementLinkFromURL } from "@excalidraw/element"; // FORK:
+
+import type { ElementsMap, ExcalidrawElement } from "@excalidraw/element/types"; // FORK:
 
 import type { Scene } from "@excalidraw/element";
 
@@ -18,10 +20,32 @@ import DialogActionButton from "./DialogActionButton";
 import { TextField } from "./TextField";
 import { IconButton } from "./IconButton";
 import { TrashIcon } from "./icons";
+import { trackHyperlinkChanged } from "./hyperlink/Hyperlink"; // FORK:
 
 import "./ElementLinkDialog.scss";
 
 import type { AppProps, AppState, UIAppState } from "../types";
+
+// FORK: Pendo track event — what an element link points to in this scene
+const getElementLinkTargetType = (
+  link: string | null,
+  elementsMap: ElementsMap,
+) => {
+  const id = link && isElementLink(link) ? parseElementLinkFromURL(link) : null;
+  if (!id) {
+    return undefined;
+  }
+  if (elementsMap.has(id)) {
+    return "element";
+  }
+  for (const element of elementsMap.values()) {
+    if (element.groupIds.includes(id)) {
+      return "group";
+    }
+  }
+  return "unresolved";
+};
+
 const ElementLinkDialog = ({
   sourceElementId,
   onClose,
@@ -87,13 +111,40 @@ const ElementLinkDialog = ({
     onClose?.();
   }, [sourceElementId, nextLink, elementsMap, linkEdited, scene, onClose]);
 
+  // FORK: Pendo track event — `handleConfirm`, then report the link change.
+  // The element is mutated in place, and the helper is a no-op when the link
+  // didn't change (e.g. on the second, window-level, Enter confirm)
+  const confirmAndTrack = useCallback(
+    (confirmMethod: "button" | "enter_key") => {
+      const elementToTrack = elementsMap.get(sourceElementId);
+      const previousLink = elementToTrack?.link ?? null;
+      handleConfirm();
+      if (elementToTrack) {
+        trackHyperlinkChanged(
+          elementToTrack,
+          previousLink,
+          elementToTrack.link,
+          {
+            source: "element_link_dialog",
+            targetType: getElementLinkTargetType(
+              elementToTrack.link ?? previousLink,
+              elementsMap,
+            ),
+            confirmMethod,
+          },
+        );
+      }
+    },
+    [elementsMap, sourceElementId, handleConfirm],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         appState.openDialog?.name === "elementLinkSelector" &&
         event.key === KEYS.ENTER
       ) {
-        handleConfirm();
+        confirmAndTrack("enter_key"); // FORK: Pendo track event
       }
 
       if (
@@ -109,7 +160,7 @@ const ElementLinkDialog = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [appState, onClose, handleConfirm]);
+  }, [appState, onClose, confirmAndTrack]); // FORK: Pendo track event
 
   return (
     <div className="ElementLinkDialog">
@@ -129,7 +180,7 @@ const ElementLinkDialog = ({
           }}
           onKeyDown={(event) => {
             if (event.key === KEYS.ENTER) {
-              handleConfirm();
+              confirmAndTrack("enter_key"); // FORK: Pendo track event
             }
           }}
           className="ElementLinkDialog__input-field"
@@ -169,7 +220,8 @@ const ElementLinkDialog = ({
 
         <DialogActionButton
           label={t("buttons.confirm")}
-          onClick={handleConfirm}
+          // FORK: Pendo track event
+          onClick={() => confirmAndTrack("button")}
           actionType="primary"
         />
       </div>

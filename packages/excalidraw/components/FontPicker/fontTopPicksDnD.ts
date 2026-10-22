@@ -7,6 +7,7 @@ import { useTopPicksDnD } from "../TopPicksDnD/topPicksDnD";
 import type {
   CreateTopPicksGhost,
   TopPicksDnD,
+  TopPicksTracking, // FORK:
 } from "../TopPicksDnD/topPicksDnD";
 
 /**
@@ -93,14 +94,18 @@ export const useFontTopPicksDnD = ({
   enabled,
   picks,
   onPicksChange,
+  tracking, // FORK:
 }: {
   enabled: boolean;
   picks: readonly FontFamilyValues[];
   onPicksChange: (picks: FontFamilyValues[]) => void;
+  /** FORK: Pendo track event context */
+  tracking?: TopPicksTracking<FontFamilyValues>;
 }): FontPickerDnD =>
   useTopPicksDnD({
     enabled,
     picks,
     onPicksChange,
     createGhost: createFontGhost,
+    tracking, // FORK: Pendo track event
   });
