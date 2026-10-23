@@ -11,6 +11,7 @@ import {
 import {
   getImageFileCount,
   getNonDeletedElementCount,
+  getUrlHostname,
   trackEvent,
   trackPendoEvent,
 } from "@excalidraw/excalidraw/analytics";
@@ -143,6 +144,11 @@ import {
   markFirstElementCreatedAsTracked,
   useTrackFirstElementCreated,
 } from "./useTrackFirstElementCreated";
+// FORK: Pendo analytics
+import {
+  setPwaInstallPromptStatus,
+  useTrackPwaInstalled,
+} from "./fork/useTrackPwaInstalled";
 import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
 import DebugCanvas, {
@@ -793,6 +799,10 @@ const ExcalidrawWrapper = () => {
 
   const trackFirstElementCreated = useTrackFirstElementCreated();
 
+  // FORK: Pendo analytics, `pwa_installed` listens on this node's window
+  const appContainerRef = useRef<HTMLDivElement>(null);
+  useTrackPwaInstalled(appContainerRef, excalidrawAPI);
+
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -1052,6 +1062,7 @@ const ExcalidrawWrapper = () => {
 
   return (
     <div
+      ref={appContainerRef} // FORK:
       style={{ height: "100%" }}
       className={clsx("excalidraw-app", {
         "is-collaborating": isCollaborating,
@@ -1129,6 +1140,18 @@ const ExcalidrawWrapper = () => {
           );
         }}
         onLinkOpen={(element, event) => {
+          // FORK: Pendo analytics. Hostname only, never the URL: element links
+          // carry the room or share-link key in their hash.
+          const isLinkToElement = !!element.link && isElementLink(element.link);
+          trackPendoEvent("element_hyperlink_opened", {
+            linkType: isLinkToElement ? "element" : "external",
+            linkHost: isLinkToElement
+              ? undefined
+              : getUrlHostname(element.link),
+            elementType: element.type,
+            viewModeEnabled: excalidrawAPI?.getAppState().viewModeEnabled,
+            isCollaborating,
+          });
           if (element.link && isElementLink(element.link)) {
             event.preventDefault();
             excalidrawAPI?.setViewport({
@@ -1393,6 +1416,7 @@ const ExcalidrawWrapper = () => {
               predicate: () => !!pwaEvent,
               perform: () => {
                 if (pwaEvent) {
+                  setPwaInstallPromptStatus("shown"); // FORK:
                   pwaEvent.prompt();
                   pwaEvent.userChoice.then((choice) => {
                     trackPendoEvent("pwa_install_prompt_completed", {
@@ -1400,6 +1424,7 @@ const ExcalidrawWrapper = () => {
                       platform: choice.platform,
                       source: "command_palette",
                     });
+                    setPwaInstallPromptStatus(choice.outcome); // FORK:
                     // event cannot be reused, but we'll hopefully
                     // grab new one as the event should be fired again
                     pwaEvent = null;

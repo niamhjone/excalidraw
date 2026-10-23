@@ -6,11 +6,13 @@ import {
   defaultGetElementLinkFromSelection,
   getLinkIdAndTypeFromSelection,
 } from "@excalidraw/element";
+import { isEmbeddableElement } from "@excalidraw/element"; // FORK:
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { Scene } from "@excalidraw/element";
 
+import { trackPendoEvent } from "../analytics"; // FORK:
 import { t } from "../i18n";
 import { getSelectedElements } from "../scene";
 
@@ -68,6 +70,9 @@ const ElementLinkDialog = ({
   ]);
 
   const handleConfirm = useCallback(() => {
+    // FORK: Pendo analytics, the link before confirming
+    const previousLink = elementsMap.get(sourceElementId)?.link ?? null;
+
     if (nextLink && nextLink !== elementsMap.get(sourceElementId)?.link) {
       const elementToLink = elementsMap.get(sourceElementId);
       elementToLink &&
@@ -84,8 +89,40 @@ const ElementLinkDialog = ({
         });
     }
 
+    // FORK: Pendo analytics, only when the link actually changed
+    // (`mutateElement` updates the element in place)
+    const linkedElement = elementsMap.get(sourceElementId);
+    const newLink = linkedElement?.link ?? null;
+    if (linkedElement && newLink !== previousLink) {
+      trackPendoEvent("element_hyperlink_changed", {
+        action: !previousLink ? "add" : !newLink ? "remove" : "change",
+        linkType: "element",
+        elementType: linkedElement.type,
+        isEmbeddable: isEmbeddableElement(linkedElement),
+        // the elements picked on the canvas are the link's target
+        targetType: newLink
+          ? getLinkIdAndTypeFromSelection(
+              getSelectedElements(elementsMap, appState),
+              appState as AppState,
+            )?.type
+          : undefined,
+        usesCustomLinkGenerator:
+          generateLinkForSelection !== defaultGetElementLinkFromSelection,
+        source: "element_link_dialog",
+      });
+    }
+
     onClose?.();
-  }, [sourceElementId, nextLink, elementsMap, linkEdited, scene, onClose]);
+  }, [
+    sourceElementId,
+    nextLink,
+    elementsMap,
+    linkEdited,
+    scene,
+    onClose,
+    appState, // FORK:
+    generateLinkForSelection, // FORK:
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
