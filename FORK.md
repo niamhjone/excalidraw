@@ -163,6 +163,7 @@ Add an entry here for every change on `deploy`, with the file(s) and the reason.
 | 2026-10-13 | About 50 files in `excalidraw-app/` and `packages/excalidraw/` (`analytics.ts`, actions, `App.tsx`, collab, library, TTD, export) | Pendo track events through `trackPendoEvent`, 45 named events, plus optional `source` arguments on a few internal functions. `loadFileToCanvas` and `exportToExcalidrawPlus` now require a new argument. | Product analytics on editor and app usage. No URLs, keys or user content are sent. **High conflict risk on upstream sync.** |
 | 2026-10-13 | `.claude/rules/fork.md` (new file) | Fork-specific Claude Code rules, kept separate from upstream's `CLAUDE.md` and `AGENTS.md`. | Lets the fork carry its own agent instructions without conflicting with upstream on sync. |
 | 2026-10-14 | `excalidraw-app/fork/pendoVisitorId.ts` (new file), `excalidraw-app/index.tsx` | `pendo.initialize` takes its visitor id from localStorage key `pendo-visitor-id`, falling back to anonymous. | Lets automation (bots) identify itself to Pendo by writing the key before page load. Unauthenticated, so any browser can set any id. |
+| 2026-10-14 | `packages/excalidraw/components/TTDDialog/common.ts` | `TTD_AGENT_ID` changed to `ubOOjcl6wUkYcbmbIEGU1ejRxl4`, the agent id registered in Novus for the "Text-to-Diagram AI Chat Assistant". | Prompt, response and reaction events were being sent under an agent id that does not match the registered agent. |
 
 ## Known items to revisit
 
