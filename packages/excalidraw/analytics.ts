@@ -106,7 +106,8 @@ export type PendoTrackEventName =
   | "embeddable_inserted"
   | "element_hyperlink_changed"
   | "element_type_converted"
-  | "editor_action_performed";
+  | "editor_action_performed"
+  | "clipboard_content_pasted";
 
 export type PendoTrackEventProperties = Record<
   string,
