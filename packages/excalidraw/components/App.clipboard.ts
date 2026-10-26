@@ -203,6 +203,18 @@ export class AppClipboard {
         retainSeed: isPlainPaste,
         preserveFrameChildrenOrder: true,
       });
+      // FORK: Pendo track event — pasted elements added to the canvas
+      if (elements.length) {
+        trackPendoEvent("clipboard_content_pasted", {
+          pasteType: data.programmaticAPI
+            ? "programmatic_elements"
+            : "elements",
+          elementCount: elements.length,
+          hasFiles: !!data.files && Object.keys(data.files).length > 0,
+          isPlainPaste,
+          formFactor: this.app.editorInterface.formFactor,
+        });
+      }
       return;
     }
 
@@ -434,12 +446,18 @@ export class AppClipboard {
         this.addTextFromPaste(
           textNodes.map((node) => node.value).join("\n\n"),
           isPlainPaste,
+          "mixed_content", // FORK: Pendo `clipboard_content_pasted` pasteType
         );
       }
     }
   }
 
-  private addTextFromPaste(text: string, isPlainPaste = false) {
+  private addTextFromPaste(
+    text: string,
+    isPlainPaste = false,
+    // FORK: Pendo `clipboard_content_pasted` pasteType
+    pasteType: "text" | "mixed_content" = "text",
+  ) {
     const { x, y } = viewportCoordsToSceneCoords(
       {
         clientX: this.app.viewport.lastPosition.x,
@@ -618,6 +636,16 @@ export class AppClipboard {
     }
     this.app.store.scheduleCapture();
     this.app.setState({ selectedElementIds: getSelectedElementIds() });
+
+    // FORK: Pendo track event — pasted text added to the canvas (no text sent)
+    trackPendoEvent("clipboard_content_pasted", {
+      pasteType,
+      elementCount: textElements.length,
+      lineCount: normalizeEOL(text).split("\n").length,
+      hasFiles: false,
+      isPlainPaste,
+      formFactor: this.app.editorInterface.formFactor,
+    });
 
     if (
       !isPlainPaste &&
