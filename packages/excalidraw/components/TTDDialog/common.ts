@@ -19,8 +19,8 @@ import type { MermaidToExcalidrawLibProps } from "./types";
 
 import type { AppClassProperties, BinaryFiles } from "../../types";
 
-/** Pendo agent analytics id of the text-to-diagram chat */
-export const TTD_AGENT_ID = "Rk09SrYqoy_OvJ985BK0mj9Wv6M";
+/** FORK: Pendo agent analytics id of the text-to-diagram chat */
+export const TTD_AGENT_ID = "b_kdW37N5YAURkK1B_jRMQpp8wQ";
 
 export const resetPreview = ({
   canvasRef,
