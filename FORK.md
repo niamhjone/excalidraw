@@ -164,6 +164,7 @@ Add an entry here for every change on `deploy`, with the file(s) and the reason.
 | 2026-10-13 | `.claude/rules/fork.md` (new file) | Fork-specific Claude Code rules, kept separate from upstream's `CLAUDE.md` and `AGENTS.md`. | Lets the fork carry its own agent instructions without conflicting with upstream on sync. |
 | 2026-10-14 | `excalidraw-app/fork/pendoVisitorId.ts` (new file), `excalidraw-app/index.tsx` | `pendo.initialize` takes its visitor id from localStorage key `pendo-visitor-id`, falling back to anonymous. | Lets automation (bots) identify itself to Pendo by writing the key before page load. Unauthenticated, so any browser can set any id. |
 | 2026-10-26 | `excalidraw-app/index.html` | Swap the Novus by Pendo app ID (API key) in the install snippet. No other change to the snippet or to `pendo.initialize`. | Point the deployment at the new Novus app. |
+| 2026-11-26 | `packages/excalidraw/components/TTDDialog/common.ts` | Change `TTD_AGENT_ID` to the agent ID of the "Text to Diagram Chat" agent in the new Novus app. The tracked events and their call sites are unchanged. | Agent analytics for the text-to-diagram chat go to the agent registered in the new Novus app. |
 
 ## Known items to revisit
 
